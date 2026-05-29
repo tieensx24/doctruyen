@@ -37,6 +37,10 @@ Comment.belongsTo(User, { foreignKey: 'user_id' });
 // User - Favorite
 User.belongsToMany(Manga, { through: Favorite, foreignKey: 'user_id', as: 'FavoritedMangas' });
 Manga.belongsToMany(User, { through: Favorite, foreignKey: 'manga_id', as: 'FavoritedByUsers' });
+User.hasMany(Favorite, { foreignKey: 'user_id' });
+Favorite.belongsTo(User, { foreignKey: 'user_id' });
+Manga.hasMany(Favorite, { foreignKey: 'manga_id' });
+Favorite.belongsTo(Manga, { foreignKey: 'manga_id' });
 
 // User - ReadingHistory
 User.hasMany(ReadingHistory, { foreignKey: 'user_id' });

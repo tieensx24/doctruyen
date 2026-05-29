@@ -3,10 +3,15 @@ const {
   Manga,
   Category,
   Chapter,
+  ChapterImage,
   Comment,
   Favorite,
   ReadingHistory,
 } = require('../models');
+const {
+  isCloudinaryConfigured,
+  uploadBufferToCloudinary,
+} = require('../config/cloudinary');
 
 const mangaInclude = [
   {
@@ -27,6 +32,16 @@ const normalizeCategoryIds = categoryIds => {
     .map(id => Number(id))
     .filter(id => Number.isInteger(id) && id > 0);
 };
+
+const makeSlug = value => value
+  .toString()
+  .trim()
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/đ/g, 'd')
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
 
 const findManga = async id => Manga.findByPk(id, { include: mangaInclude });
 
@@ -243,10 +258,114 @@ const deleteManga = async (req, res) => {
   }
 };
 
+const uploadMangaCover = async (req, res) => {
+  try {
+    if (!isCloudinaryConfigured()) {
+      return res.status(500).json({ message: 'Cloudinary chưa được cấu hình' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'Vui lòng chọn ảnh bìa' });
+    }
+
+    const manga = await Manga.findByPk(req.params.id);
+    if (!manga) return res.status(404).json({ message: 'Không tìm thấy truyện' });
+
+    const result = await uploadBufferToCloudinary(req.file.buffer, {
+      folder: 'doctruyen/covers',
+      resource_type: 'image',
+      public_id: `manga-${manga.id}-${Date.now()}`,
+      overwrite: true,
+    });
+
+    await manga.update({ cover_image: result.secure_url });
+
+    res.json({
+      message: 'Upload ảnh bìa thành công',
+      cover_image: result.secure_url,
+      manga: await findManga(manga.id),
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Upload ảnh bìa thất bại', error: error.message });
+  }
+};
+
 const getCategories = async (req, res) => {
   try {
     const categories = await Category.findAll({ order: [['name', 'ASC']] });
     res.json(categories);
+  } catch (error) {
+    res.status(500).json({ message: 'Lỗi server', error: error.message });
+  }
+};
+
+const createCategory = async (req, res) => {
+  try {
+    const { name, slug } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Tên thể loại không được để trống' });
+    }
+
+    const finalSlug = makeSlug(slug || name);
+    if (!finalSlug) {
+      return res.status(400).json({ message: 'Slug thể loại không hợp lệ' });
+    }
+
+    const category = await Category.create({
+      name: name.trim(),
+      slug: finalSlug,
+    });
+
+    res.status(201).json({ message: 'Tạo thể loại thành công', category });
+  } catch (error) {
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ message: 'Tên hoặc slug thể loại đã tồn tại' });
+    }
+    res.status(500).json({ message: 'Lỗi server', error: error.message });
+  }
+};
+
+const updateCategory = async (req, res) => {
+  try {
+    const { name, slug } = req.body;
+    const category = await Category.findByPk(req.params.id);
+
+    if (!category) return res.status(404).json({ message: 'Không tìm thấy thể loại' });
+
+    if (name !== undefined && !name.trim()) {
+      return res.status(400).json({ message: 'Tên thể loại không được để trống' });
+    }
+
+    const nextName = name !== undefined ? name.trim() : category.name;
+    const nextSlug = slug !== undefined ? makeSlug(slug) : makeSlug(nextName);
+
+    if (!nextSlug) {
+      return res.status(400).json({ message: 'Slug thể loại không hợp lệ' });
+    }
+
+    await category.update({
+      name: nextName,
+      slug: nextSlug,
+    });
+
+    res.json({ message: 'Cập nhật thể loại thành công', category });
+  } catch (error) {
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ message: 'Tên hoặc slug thể loại đã tồn tại' });
+    }
+    res.status(500).json({ message: 'Lỗi server', error: error.message });
+  }
+};
+
+const deleteCategory = async (req, res) => {
+  try {
+    const category = await Category.findByPk(req.params.id);
+
+    if (!category) return res.status(404).json({ message: 'Không tìm thấy thể loại' });
+
+    await category.destroy();
+    res.json({ message: 'Xóa thể loại thành công' });
   } catch (error) {
     res.status(500).json({ message: 'Lỗi server', error: error.message });
   }
@@ -259,6 +378,14 @@ const getChaptersByManga = async (req, res) => {
 
     const chapters = await Chapter.findAll({
       where: { manga_id: manga.id },
+      include: [
+        {
+          model: ChapterImage,
+          attributes: ['id', 'image_url', 'page_number'],
+          separate: true,
+          order: [['page_number', 'ASC']],
+        },
+      ],
       order: [['chapter_number', 'ASC']],
     });
 
@@ -327,6 +454,54 @@ const deleteChapter = async (req, res) => {
   }
 };
 
+const uploadChapterImages = async (req, res) => {
+  try {
+    if (!isCloudinaryConfigured()) {
+      return res.status(500).json({ message: 'Cloudinary chưa được cấu hình' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: 'Vui lòng chọn ảnh chapter' });
+    }
+
+    const chapter = await Chapter.findByPk(req.params.id);
+    if (!chapter) return res.status(404).json({ message: 'Không tìm thấy chapter' });
+
+    const existingCount = await ChapterImage.count({ where: { chapter_id: chapter.id } });
+    const uploadedImages = [];
+
+    for (const [index, file] of req.files.entries()) {
+      const pageNumber = existingCount + index + 1;
+      const result = await uploadBufferToCloudinary(file.buffer, {
+        folder: `doctruyen/chapters/${chapter.id}`,
+        resource_type: 'image',
+        public_id: `chapter-${chapter.id}-page-${pageNumber}-${Date.now()}`,
+        overwrite: true,
+      });
+
+      uploadedImages.push({
+        chapter_id: chapter.id,
+        image_url: result.secure_url,
+        page_number: pageNumber,
+      });
+    }
+
+    await ChapterImage.bulkCreate(uploadedImages);
+
+    const images = await ChapterImage.findAll({
+      where: { chapter_id: chapter.id },
+      order: [['page_number', 'ASC']],
+    });
+
+    res.status(201).json({
+      message: 'Upload ảnh chapter thành công',
+      images,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Upload ảnh chapter thất bại', error: error.message });
+  }
+};
+
 module.exports = {
   getDashboard,
   getUsers,
@@ -337,9 +512,14 @@ module.exports = {
   createManga,
   updateManga,
   deleteManga,
+  uploadMangaCover,
   getCategories,
+  createCategory,
+  updateCategory,
+  deleteCategory,
   getChaptersByManga,
   createChapter,
   updateChapter,
   deleteChapter,
+  uploadChapterImages,
 };

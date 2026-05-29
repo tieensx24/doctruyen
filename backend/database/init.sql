@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS chapter_images (
   id INT PRIMARY KEY AUTO_INCREMENT,
   chapter_id INT NOT NULL,
   image_url VARCHAR(500) NOT NULL,
-  order_index INT NOT NULL,
+  page_number INT NOT NULL,
   FOREIGN KEY (chapter_id) REFERENCES chapters(id) ON DELETE CASCADE
 );
 

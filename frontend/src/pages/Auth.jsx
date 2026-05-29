@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-
-const API = "http://localhost:3000/api";
+import api, { isOk } from "../api/client.js";
 
 function useLocalStorage(key, initial) {
   const [val, setVal] = useState(() => localStorage.getItem(key) || initial);
@@ -10,18 +9,23 @@ function useLocalStorage(key, initial) {
 }
 
 async function apiFetch(path, options = {}) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 10000);
   try {
-    const res = await fetch(`${API}${path}`, { ...options, signal: ctrl.signal });
-    const data = await res.json();
-    return { ok: res.ok, status: res.status, data };
+    const response = await api.request({
+      url: path,
+      method: options.method || "GET",
+      headers: options.headers,
+      data: options.body ? JSON.parse(options.body) : options.data,
+    });
+
+    return {
+      ok: isOk(response),
+      status: response.status,
+      data: response.data,
+    };
   } catch (err) {
-    throw err.name === "AbortError"
+    throw err.code === "ECONNABORTED"
       ? new Error("Không thể kết nối server. Vui lòng thử lại.")
-      : err;
-  } finally {
-    clearTimeout(t);
+      : new Error(err.response?.data?.message || err.message || "Yêu cầu thất bại");
   }
 }
 
@@ -555,25 +559,23 @@ export default function Auth({ onGoHome, onLoginSuccess }) {
 
           {/* ── Left panel ── */}
           <div style={{
-            flex: "0 0 360px", background: "#0c1a2e",
+            flex: "0 0 360px", background: "#ffffff",
             padding: "48px 40px", display: "flex",
             flexDirection: "column", justifyContent: "space-between",
             position: "relative", overflow: "hidden",
+            borderRight: "1px solid var(--color-border-tertiary)",
           }}>
-            <div style={{
-              position: "absolute", inset: 0,
-              backgroundImage: "radial-gradient(circle at 30% 20%, rgba(55,138,221,0.18) 0%, transparent 60%), radial-gradient(circle at 80% 80%, rgba(29,158,117,0.12) 0%, transparent 50%)",
-            }} />
             <div style={{ position: "relative" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 48 }}>
-                <span style={{ fontSize: 26 }}>📖</span>
-                <span style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>DocTruyen</span>
-              </div>
-              <h2 style={{ color: "#fff", fontSize: 26, fontWeight: 700, margin: "0 0 12px", lineHeight: 1.3 }}>
-                Kho truyện tranh trực tuyến
+              <img
+                src="/logo-gao.png"
+                alt="Gạo - Truyện hay ở đây"
+                style={{ display: "block", height: 68, width: "auto", marginBottom: 40 }}
+              />
+              <h2 style={{ color: "var(--color-text-primary)", fontSize: 26, fontWeight: 700, margin: "0 0 12px", lineHeight: 1.3 }}>
+                Kho truyện hay ở đây
               </h2>
-              <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, lineHeight: 1.7, margin: 0 }}>
-                Đọc hàng nghìn bộ truyện tranh, theo dõi tiến độ và khám phá những bộ mới mỗi ngày.
+              <p style={{ color: "var(--color-text-secondary)", fontSize: 14, lineHeight: 1.7, margin: 0 }}>
+                Đọc hàng nghìn bộ truyện, theo dõi tiến độ và khám phá những bộ mới mỗi ngày.
               </p>
             </div>
 
@@ -590,11 +592,11 @@ export default function Auth({ onGoHome, onLoginSuccess }) {
                 }}>
                   <span style={{
                     width: 34, height: 34, borderRadius: 8,
-                    background: "rgba(255,255,255,0.08)",
+                    background: "var(--color-background-secondary)",
                     display: "flex", alignItems: "center",
                     justifyContent: "center", fontSize: 16, flexShrink: 0,
                   }}>{f.icon}</span>
-                  <span style={{ color: "rgba(255,255,255,0.75)", fontSize: 13 }}>{f.text}</span>
+                  <span style={{ color: "var(--color-text-secondary)", fontSize: 13 }}>{f.text}</span>
                 </div>
               ))}
             </div>
