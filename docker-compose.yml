@@ -6,8 +6,8 @@ services:
     restart: always
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
-      MYSQL_ROOT_PASSWORD: REMOVED_DB_PASSWORD
-      MYSQL_DATABASE: doctruyen_db
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
     ports:
       - "3308:3306"
     volumes:
@@ -21,16 +21,16 @@ services:
     container_name: doctruyen_backend
     restart: always
     environment:
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_NAME: doctruyen_db
-      DB_USER: root
-      DB_PASSWORD: REMOVED_DB_PASSWORD
-      JWT_SECRET: REMOVED_JWT_SECRET
-      CLOUDINARY_CLOUD_NAME: REMOVED_CLOUDINARY_CLOUD_NAME
-      CLOUDINARY_API_KEY: REMOVED_CLOUDINARY_API_KEY
-      CLOUDINARY_API_SECRET: REMOVED_CLOUDINARY_API_SECRET
-      PORT: 3000
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+      PORT: ${PORT}
     ports:
       - "3000:3000"
     volumes:
