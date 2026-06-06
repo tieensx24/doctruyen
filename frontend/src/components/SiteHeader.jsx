@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  KeyRound,
+  LayoutDashboard,
   LogOut,
   Menu,
   Search,
+  Settings,
   Shield,
   UserCircle,
 } from "lucide-react";
@@ -57,10 +60,13 @@ export default function SiteHeader({
   setSearch,
 }) {
   const searchWrapRef = useRef(null);
+  const adminMenuRef = useRef(null);
+  const adminCloseTimerRef = useRef(null);
   const suggestCacheRef = useRef(new Map());
   const [suggestions, setSuggestions] = useState([]);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
   const handleMenuClick = (key) => {
@@ -76,6 +82,22 @@ export default function SiteHeader({
     onLogout?.();
   };
 
+  const openAdminMenu = () => {
+    if (adminCloseTimerRef.current) {
+      window.clearTimeout(adminCloseTimerRef.current);
+      adminCloseTimerRef.current = null;
+    }
+    setAdminMenuOpen(true);
+  };
+
+  const scheduleCloseAdminMenu = () => {
+    if (adminCloseTimerRef.current) window.clearTimeout(adminCloseTimerRef.current);
+    adminCloseTimerRef.current = window.setTimeout(() => {
+      setAdminMenuOpen(false);
+      adminCloseTimerRef.current = null;
+    }, 220);
+  };
+
   const handleSearchSubmit = (event) => {
     event.preventDefault();
     const keyword = String(search || "").trim();
@@ -89,6 +111,9 @@ export default function SiteHeader({
     function handleClickOutside(event) {
       if (!searchWrapRef.current?.contains(event.target)) {
         setSuggestOpen(false);
+      }
+      if (!adminMenuRef.current?.contains(event.target)) {
+        setAdminMenuOpen(false);
       }
     }
 
@@ -151,12 +176,34 @@ export default function SiteHeader({
     };
   }, [search]);
 
+  useEffect(() => {
+    return () => {
+      if (adminCloseTimerRef.current) window.clearTimeout(adminCloseTimerRef.current);
+    };
+  }, []);
+
   const showSuggestions = suggestOpen && String(search || "").trim().length >= 2;
+  const isAdmin = user?.role_id === 1;
 
   function handleSuggestionClick(manga) {
     setSuggestOpen(false);
     setSearch?.(manga.title || "");
     onGoDetail?.(manga);
+  }
+
+  function handleAdminDashboard() {
+    setAdminMenuOpen(false);
+    onGoAdmin?.();
+  }
+
+  function handleAdminLogout() {
+    setAdminMenuOpen(false);
+    handleLogout();
+  }
+
+  function handlePendingAdminAction(label) {
+    setAdminMenuOpen(false);
+    window.alert(`${label} đang được bổ sung.`);
   }
 
   return (
@@ -224,23 +271,51 @@ export default function SiteHeader({
           <button className="menu-button" type="button" aria-label="Mở menu">
             <Menu size={20} />
           </button>
-          {user?.role_id === 1 && (
-            <button className="admin-link" onClick={onGoAdmin} type="button">
-              <Shield size={17} />
-              Admin
-            </button>
-          )}
           {user ? (
-            <button className="login-button ghost" onClick={handleLogout} type="button">
-              <LogOut size={17} />
-              Đăng xuất
-            </button>
-          ) : (
+            <div
+              className="admin-menu-wrap"
+              onMouseEnter={openAdminMenu}
+              onMouseLeave={scheduleCloseAdminMenu}
+              ref={adminMenuRef}
+            >
+              <button
+                aria-expanded={adminMenuOpen}
+                className={isAdmin ? "admin-link" : "login-button ghost"}
+                onClick={() => setAdminMenuOpen((isOpen) => !isOpen)}
+                type="button"
+              >
+                {isAdmin ? <Shield size={17} /> : <UserCircle size={18} />}
+                {isAdmin ? "Admin" : "Tài khoản"}
+              </button>
+              {adminMenuOpen && (
+                <div className="admin-dropdown" role="menu">
+                  {isAdmin && (
+                    <button onClick={handleAdminDashboard} role="menuitem" type="button">
+                      <LayoutDashboard size={17} />
+                      Dashboard
+                    </button>
+                  )}
+                  <button onClick={() => handlePendingAdminAction("Đổi mật khẩu")} role="menuitem" type="button">
+                    <KeyRound size={17} />
+                    Đổi mật khẩu
+                  </button>
+                  <button onClick={() => handlePendingAdminAction("Cài đặt")} role="menuitem" type="button">
+                    <Settings size={17} />
+                    Cài đặt
+                  </button>
+                  <button className="danger" onClick={handleAdminLogout} role="menuitem" type="button">
+                    <LogOut size={17} />
+                    Đăng xuất
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : !user ? (
             <button className="login-button" onClick={onGoAuth} type="button">
               <UserCircle size={18} />
               Đăng nhập
             </button>
-          )}
+          ) : null}
         </div>
       </div>
     </header>

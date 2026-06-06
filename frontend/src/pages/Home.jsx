@@ -67,7 +67,18 @@ function EmptyState({ children }) {
   return <div className="empty-state">{children}</div>;
 }
 
+function ViewCount({ value }) {
+  return (
+    <span className="story-view-count">
+      <Eye size={14} strokeWidth={2} />
+      {formatNumber(value)}
+    </span>
+  );
+}
+
 function NovelCard({ novel, compact = false, onOpen }) {
+  const statusClass = novel.rawStatus === "completed" ? "completed" : "ongoing";
+
   return (
     <article
       className={compact ? "novel-card compact" : "novel-card"}
@@ -77,17 +88,33 @@ function NovelCard({ novel, compact = false, onOpen }) {
     >
       <div className="novel-cover">
         <img src={novel.cover} alt={novel.title} />
-        <span className="status-pill">{novel.status}</span>
       </div>
+      <span className={`status-pill ${statusClass}`}>{novel.status}</span>
       <div className="novel-card-body">
         <h3>{novel.title}</h3>
         <p>{novel.author}</p>
         <div className="novel-meta-row">
-          <span>{novel.latestChapter}</span>
-          <span>
-            <Eye size={14} />
-            {formatNumber(novel.views)}
-          </span>
+          <span className="novel-latest-chapter">{novel.latestChapter}</span>
+          <ViewCount value={novel.views} />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function HotStoryCard({ novel, onOpen }) {
+  const statusClass = novel.rawStatus === "completed" ? "completed" : "ongoing";
+
+  return (
+    <article className="hot-story-card" onClick={() => onOpen?.(novel)} role="button" tabIndex={0}>
+      <img className="hot-story-cover" src={novel.cover} alt={novel.title} />
+      <span className={`hot-story-status ${statusClass}`}>{novel.status}</span>
+      <div className="hot-story-info">
+        <h3 className="hot-story-title">{novel.title}</h3>
+        <p className="hot-story-author">{novel.author}</p>
+        <div className="hot-story-meta">
+          <span className="hot-story-chapter">{novel.latestChapter}</span>
+          <ViewCount value={novel.views} />
         </div>
       </div>
     </article>
@@ -354,12 +381,18 @@ export default function Home({
                 )}
               </section>
 
-              <section>
-                <SectionHeader icon={Flame} title="Truyện hot" />
+              <section className="hot-story-section">
+                <div className="hot-story-header">
+                  <div>
+                    <Flame size={22} />
+                    <h2>Truyện hot</h2>
+                  </div>
+                  <button type="button">Xem tất cả</button>
+                </div>
                 {hotNovels.length ? (
-                  <div className="novel-grid compact-grid">
+                  <div className="hot-story-grid">
                     {hotNovels.slice(0, 6).map((novel) => (
-                      <NovelCard compact key={`hot-${novel.id}`} novel={novel} onOpen={onGoDetail} />
+                      <HotStoryCard key={`hot-${novel.id}`} novel={novel} onOpen={onGoDetail} />
                     ))}
                   </div>
                 ) : (
