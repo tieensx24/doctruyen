@@ -14,6 +14,18 @@ const verifyToken = (req, res, next) => {
   });
 };
 
+const optionalVerifyToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return next();
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (!err) req.user = decoded;
+    next();
+  });
+};
+
 const isAdmin = (req, res, next) => {
   if (req.user.role_id !== 1) {
     return res.status(403).json({ message: 'Không có quyền admin' });
@@ -21,4 +33,4 @@ const isAdmin = (req, res, next) => {
   next();
 };
 
-module.exports = { verifyToken, isAdmin };
+module.exports = { verifyToken, optionalVerifyToken, isAdmin };

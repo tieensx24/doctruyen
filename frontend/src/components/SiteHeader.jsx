@@ -1,48 +1,52 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from "react";
 import {
   LogOut,
   Menu,
   Search,
   Shield,
   UserCircle,
-} from 'lucide-react';
-import api, { isOk } from '../api/client.js';
+} from "lucide-react";
+import api, { isOk } from "../api/client.js";
 
 const MENU_ITEMS = [
-  { key: 'home', label: 'Trang chủ' },
-  { key: 'categories', label: 'Thể loại' },
-  { key: 'history', label: 'Lịch sử đọc' },
-  { key: 'following', label: 'Theo dõi' },
+  { key: "home", label: "Trang chủ" },
+  { key: "categories", label: "Thể loại" },
+  { key: "history", label: "Lịch sử đọc" },
+  { key: "following", label: "Theo dõi" },
 ];
 
 function normalizeText(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[đĐ]/g, 'd')
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, "d")
     .toLowerCase();
 }
 
 function getMangaCategories(manga) {
-  if (Array.isArray(manga?.Categories)) return manga.Categories.map(category => category.name);
+  if (Array.isArray(manga?.Categories)) return manga.Categories.map((category) => category.name);
   if (Array.isArray(manga?.categories)) return manga.categories;
   return [];
 }
 
 function getLatestChapter(manga) {
+  if (manga?.latest_chapter) {
+    return manga.latest_chapter.title || `Chương ${manga.latest_chapter.chapter_number}`;
+  }
+
   const chapters = Array.isArray(manga?.Chapters) ? manga.Chapters : [];
   const chapter = [...chapters].sort((a, b) => Number(b.chapter_number || 0) - Number(a.chapter_number || 0))[0];
-  if (!chapter) return manga?.status === 'completed' ? 'Full' : 'Chưa có chương';
+  if (!chapter) return manga?.status === "completed" ? "Full" : "Chưa có chương";
   return chapter.title || `Chương ${chapter.chapter_number}`;
 }
 
 export default function SiteHeader({
-  activePage = 'home',
+  activePage = "home",
+  overlay = false,
   user,
   onGoHome,
   onGoAuth,
   onGoAdmin,
-  onGoMangaList,
   onGoCategories,
   onGoReadingHistory,
   onGoFollowing,
@@ -53,49 +57,33 @@ export default function SiteHeader({
   setSearch,
 }) {
   const searchWrapRef = useRef(null);
-  const [mangas, setMangas] = useState([]);
+  const suggestCacheRef = useRef(new Map());
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
-  const handleMenuClick = key => {
-    if (key === 'home') onGoHome?.();
-    if (key === 'categories') onGoCategories?.();
-    if (key === 'history') onGoReadingHistory?.();
-    if (key === 'following') onGoFollowing?.();
+  const handleMenuClick = (key) => {
+    if (key === "home") onGoHome?.();
+    if (key === "categories") onGoCategories?.();
+    if (key === "history") onGoReadingHistory?.();
+    if (key === "following") onGoFollowing?.();
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('doctruyen_token');
-    localStorage.removeItem('doctruyen_user');
+    localStorage.removeItem("doctruyen_token");
+    localStorage.removeItem("doctruyen_user");
     onLogout?.();
   };
 
-  const handleSearchSubmit = event => {
+  const handleSearchSubmit = (event) => {
     event.preventDefault();
-    const keyword = String(search || '').trim();
+    const keyword = String(search || "").trim();
     if (keyword) {
       setSuggestOpen(false);
       onSearchSubmit?.(keyword);
     }
   };
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadMangas() {
-      try {
-        const response = await api.get('/mangas');
-        if (!active || !isOk(response)) return;
-        setMangas(Array.isArray(response.data) ? response.data : []);
-      } catch {
-        if (active) setMangas([]);
-      }
-    }
-
-    loadMangas();
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -104,38 +92,75 @@ export default function SiteHeader({
       }
     }
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const suggestions = useMemo(() => {
-    const keyword = normalizeText(search).trim();
-    if (!keyword) return [];
+  useEffect(() => {
+    if (!overlay) {
+      setScrolled(false);
+      return undefined;
+    }
 
-    return mangas
-      .filter(manga => {
-        const searchableText = [
-          manga.title,
-          manga.author,
-          manga.status,
-          ...getMangaCategories(manga),
-        ].map(normalizeText).join(' ');
+    const handleScroll = () => setScrolled(window.scrollY > 24);
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [overlay]);
 
-        return searchableText.includes(keyword);
-      })
-      .slice(0, 8);
-  }, [mangas, search]);
+  useEffect(() => {
+    const keyword = String(search || "").trim();
+    const cacheKey = normalizeText(keyword);
 
-  const showSuggestions = suggestOpen && String(search || '').trim() && suggestions.length > 0;
+    if (cacheKey.length < 2) {
+      setSuggestions([]);
+      setSuggestLoading(false);
+      return undefined;
+    }
+
+    if (suggestCacheRef.current.has(cacheKey)) {
+      setSuggestions(suggestCacheRef.current.get(cacheKey));
+      setSuggestLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setSuggestLoading(true);
+      try {
+        const response = await api.get("/search", {
+          params: { q: keyword, limit: 8, mode: "suggest" },
+        });
+        const data = isOk(response) && Array.isArray(response.data) ? response.data : [];
+        suggestCacheRef.current.set(cacheKey, data);
+        if (suggestCacheRef.current.size > 30) {
+          const firstKey = suggestCacheRef.current.keys().next().value;
+          suggestCacheRef.current.delete(firstKey);
+        }
+        if (active) setSuggestions(data);
+      } catch {
+        if (active) setSuggestions([]);
+      } finally {
+        if (active) setSuggestLoading(false);
+      }
+    }, 280);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [search]);
+
+  const showSuggestions = suggestOpen && String(search || "").trim().length >= 2;
 
   function handleSuggestionClick(manga) {
     setSuggestOpen(false);
-    setSearch?.(manga.title || '');
-    onGoDetail?.(manga.id);
+    setSearch?.(manga.title || "");
+    onGoDetail?.(manga);
   }
 
   return (
-    <header className="site-header">
+    <header className={["site-header", overlay ? "site-header-overlay" : "", scrolled ? "scrolled" : ""].filter(Boolean).join(" ")}>
       <div className="header-inner">
         <div className="brand">
           <img className="brand-logo" src="/logo-gao.png" alt="Gạo - Truyện hay ở đây" />
@@ -144,8 +169,8 @@ export default function SiteHeader({
         <form className="header-search" onSubmit={handleSearchSubmit} ref={searchWrapRef}>
           <Search size={18} />
           <input
-            value={search || ''}
-            onChange={event => {
+            value={search || ""}
+            onChange={(event) => {
               setSearch?.(event.target.value);
               setSuggestOpen(true);
             }}
@@ -154,29 +179,38 @@ export default function SiteHeader({
           />
           {showSuggestions && (
             <div className="search-suggest-panel">
-              {suggestions.map(manga => (
-                <button
-                  className="search-suggest-item"
-                  key={manga.id}
-                  onMouseDown={event => event.preventDefault()}
-                  onClick={() => handleSuggestionClick(manga)}
-                  type="button"
-                >
-                  <img src={manga.cover_image || '/logo-gao.png'} alt={manga.title || 'Truyện'} />
-                  <span>
-                    <strong>{manga.title || 'Truyện chưa đặt tên'}</strong>
-                    <small>{getLatestChapter(manga)}</small>
-                  </span>
-                </button>
-              ))}
+              {suggestLoading ? (
+                <div className="search-suggest-empty">Đang tìm...</div>
+              ) : suggestions.length ? (
+                suggestions.map((manga) => (
+                  <button
+                    className="search-suggest-item"
+                    key={manga.id}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => handleSuggestionClick(manga)}
+                    type="button"
+                  >
+                    <img src={manga.cover_image || "/logo-gao.png"} alt={manga.title || "Truyện"} />
+                    <span>
+                      <strong>{manga.title || "Truyện chưa đặt tên"}</strong>
+                      <small>{getLatestChapter(manga)}{manga.author ? ` - ${manga.author}` : ""}</small>
+                      {manga.matched_fields?.length > 0 && (
+                        <em>{manga.matched_fields.includes("category") ? getMangaCategories(manga).join(", ") : "Khớp dữ liệu truyện"}</em>
+                      )}
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <div className="search-suggest-empty">Không tìm thấy truyện phù hợp.</div>
+              )}
             </div>
           )}
         </form>
 
         <nav className="main-menu">
-          {MENU_ITEMS.map(item => (
+          {MENU_ITEMS.map((item) => (
             <button
-              className={activePage === item.key ? 'active' : ''}
+              className={activePage === item.key ? "active" : ""}
               key={item.key}
               onClick={() => handleMenuClick(item.key)}
               type="button"

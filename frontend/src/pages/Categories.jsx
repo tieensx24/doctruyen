@@ -65,7 +65,7 @@ function CategoryCard({ manga, onOpen }) {
   return (
     <article
       className="category-card"
-      onClick={() => onOpen?.(manga.id)}
+      onClick={() => onOpen?.(manga)}
       role="button"
       tabIndex={0}
     >

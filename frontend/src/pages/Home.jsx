@@ -5,15 +5,14 @@ import {
   Eye,
   Flame,
   Heart,
-  Info,
   MessageCircle,
-  Play,
   Sparkles,
   Star,
   TrendingUp,
 } from "lucide-react";
 import MainLayout from "../components/MainLayout.jsx";
 import SiteHeader from "../components/SiteHeader.jsx";
+import HeroBanner from "../components/HeroBanner.jsx";
 import api, { isOk } from "../api/client.js";
 
 const PLACEHOLDER_COVER = "/logo-gao.png";
@@ -55,6 +54,7 @@ function enrichManga(manga, index) {
     followers: Number(manga.followers || manga.followers_count || 0),
     comments: Number(manga.comments || manga.comments_count || 0),
     cover: manga.cover_image || manga.coverImage || PLACEHOLDER_COVER,
+    banner: manga.banner_image || manga.bannerImage || manga.cover_image || PLACEHOLDER_COVER,
     description: manga.description || "Truyện này chưa có mô tả.",
   };
 }
@@ -71,7 +71,7 @@ function NovelCard({ novel, compact = false, onOpen }) {
   return (
     <article
       className={compact ? "novel-card compact" : "novel-card"}
-      onClick={() => onOpen?.(novel.id)}
+      onClick={() => onOpen?.(novel)}
       role="button"
       tabIndex={0}
     >
@@ -132,72 +132,31 @@ function RankingList({ title, icon: Icon, novels, metric }) {
   );
 }
 
-function Hero({ novels, onGoDetail }) {
-  const featured = novels[0];
-  const sideNovels = novels.slice(1, 5);
-
-  if (!featured) {
-    return <EmptyState>Chưa có truyện trong database. Hãy thêm truyện ở trang admin.</EmptyState>;
-  }
-
-  return (
-    <section className="hero-layout">
-      <article className="hero-banner" style={{ backgroundImage: `url(/covers/hero-bg.png), url(${featured.cover})` }}>
-        <div className="hero-overlay" />
-        <div className="hero-content">
-          <span className="hero-kicker">
-            <Sparkles size={16} />
-            Truyện nổi bật hôm nay
-          </span>
-          <h1>{featured.title}</h1>
-          {featured.englishTitle && <p className="english-title">{featured.englishTitle}</p>}
-          <div className="hero-tags">
-            {featured.genres.slice(0, 3).map((genre) => (
-              <span key={genre}>{genre}</span>
-            ))}
-            <span>{featured.status}</span>
-            <span>{featured.chapterCount} chương</span>
-          </div>
-          <p className="hero-description">{featured.description}</p>
-          <div className="hero-actions">
-            <button className="primary-cta" onClick={() => onGoDetail?.(featured.id)} type="button">
-              <Play size={18} fill="currentColor" />
-              Đọc ngay
-            </button>
-            <button type="button">
-              <Heart size={18} />
-              Theo dõi
-            </button>
-            <button onClick={() => onGoDetail?.(featured.id)} type="button">
-              <Info size={18} />
-              Thông tin
-            </button>
-          </div>
-        </div>
-      </article>
-
-      <aside className="featured-strip">
-        {sideNovels.map((novel) => (
-          <button className="featured-thumb" key={novel.id} onClick={() => onGoDetail?.(novel.id)} type="button">
-            <img src={novel.cover} alt={novel.title} />
-            <span>
-              <strong>{novel.title}</strong>
-              <small>{novel.latestChapter}</small>
-            </span>
-          </button>
-        ))}
-      </aside>
-    </section>
-  );
-}
-
-export default function Home({ user, onGoHome, onGoAuth, onGoAdmin, onGoMangaList, onGoCategories, onGoReadingHistory, onGoFollowing, onGoDetail, onSearchSubmit, onLogout }) {
+export default function Home({
+  user,
+  onGoHome,
+  onGoAuth,
+  onGoAdmin,
+  onGoMangaList,
+  onGoCategories,
+  onGoReadingHistory,
+  onGoFollowing,
+  onGoDetail,
+  onGoMangaInfo,
+  onSearchSubmit,
+  onLogout,
+}) {
   const [mangas, setMangas] = useState([]);
+  const [heroSlides, setHeroSlides] = useState([]);
   const [categories, setCategories] = useState([]);
   const [search, setSearch] = useState("");
   const [activeGenre, setActiveGenre] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [activeHeroId, setActiveHeroId] = useState(null);
+  const [featuredFollowed, setFeaturedFollowed] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
+  const token = localStorage.getItem("doctruyen_token");
 
   useEffect(() => {
     async function fetchHomeData() {
@@ -205,9 +164,10 @@ export default function Home({ user, onGoHome, onGoAuth, onGoAdmin, onGoMangaLis
       setError("");
 
       try {
-        const [mangaResponse, categoryResponse] = await Promise.all([
+        const [mangaResponse, categoryResponse, heroResponse] = await Promise.all([
           api.get("/mangas"),
           api.get("/categories"),
+          api.get("/hero-slides"),
         ]);
 
         if (!isOk(mangaResponse)) throw new Error("Không tải được danh sách truyện.");
@@ -215,8 +175,10 @@ export default function Home({ user, onGoHome, onGoAuth, onGoAdmin, onGoMangaLis
 
         setMangas(Array.isArray(mangaResponse.data) ? mangaResponse.data : []);
         setCategories(Array.isArray(categoryResponse.data) ? categoryResponse.data : []);
+        setHeroSlides(Array.isArray(heroResponse.data) ? heroResponse.data : []);
       } catch (err) {
         setMangas([]);
+        setHeroSlides([]);
         setCategories([]);
         setError(err.message || "Không tải được dữ liệu từ server.");
       } finally {
@@ -229,6 +191,68 @@ export default function Home({ user, onGoHome, onGoAuth, onGoAdmin, onGoMangaLis
 
   const genres = useMemo(() => categories.map((category) => category.name).filter(Boolean), [categories]);
   const novels = useMemo(() => mangas.map(enrichManga), [mangas]);
+  const featuredId = activeHeroId || heroSlides[0]?.Manga?.id || heroSlides[0]?.manga_id || novels[0]?.id;
+
+  useEffect(() => {
+    async function loadFeaturedFollowStatus() {
+      if (!featuredId || !token) {
+        setFeaturedFollowed(false);
+        return;
+      }
+
+      try {
+        const response = await api.get(`/favorites/${featuredId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (isOk(response)) {
+          setFeaturedFollowed(Boolean(response.data?.is_favorited));
+        }
+      } catch {
+        setFeaturedFollowed(false);
+      }
+    }
+
+    loadFeaturedFollowStatus();
+  }, [featuredId, token]);
+
+  async function toggleFeaturedFollow(mangaId) {
+    if (!mangaId) return;
+
+    if (!token) {
+      onGoAuth?.();
+      return;
+    }
+
+    setFollowLoading(true);
+    try {
+      const response = featuredFollowed
+        ? await api.delete(`/favorites/${mangaId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        : await api.post(`/favorites/${mangaId}`, null, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+      if (!isOk(response)) throw new Error(response.data?.message || "Không cập nhật được theo dõi.");
+
+      const nextFollowed = !featuredFollowed;
+      setFeaturedFollowed(nextFollowed);
+      setMangas((current) => current.map((manga) => {
+        if (Number(manga.id) !== Number(mangaId)) return manga;
+
+        const followers = Number(manga.followers_count || manga.followers || 0);
+        return {
+          ...manga,
+          followers_count: Math.max(0, followers + (nextFollowed ? 1 : -1)),
+        };
+      }));
+    } catch (err) {
+      setError(err.message || "Không cập nhật được theo dõi.");
+    } finally {
+      setFollowLoading(false);
+    }
+  }
 
   const filteredNovels = novels.filter((novel) => {
     const keyword = search.trim().toLowerCase();
@@ -250,6 +274,7 @@ export default function Home({ user, onGoHome, onGoAuth, onGoAdmin, onGoMangaLis
     <MainLayout>
       <SiteHeader
         activePage="home"
+        overlay
         user={user}
         onGoHome={onGoHome}
         onGoAuth={onGoAuth}
@@ -265,118 +290,133 @@ export default function Home({ user, onGoHome, onGoAuth, onGoAdmin, onGoMangaLis
         setSearch={setSearch}
       />
 
-      <main className="reader-shell">
+      <main className="home-page">
         {error && <EmptyState>{error}</EmptyState>}
-        {loading ? <EmptyState>Đang tải dữ liệu từ database...</EmptyState> : <Hero novels={novels} onGoDetail={onGoDetail} />}
+        {loading ? (
+          <EmptyState>Đang tải dữ liệu từ database...</EmptyState>
+        ) : (
+          <HeroBanner
+            fallbackNovels={novels}
+            slides={heroSlides}
+            onGoDetail={onGoDetail}
+            onGoInfo={onGoMangaInfo}
+            onFollow={toggleFeaturedFollow}
+            onActiveChange={setActiveHeroId}
+            isFollowed={featuredFollowed}
+            followLoading={followLoading}
+          />
+        )}
 
-        <section className="genre-section">
-          <div className="section-head">
-            <div>
-              <Sparkles size={19} />
-              <h2>Bạn đang muốn đọc gì?</h2>
-            </div>
-            {activeGenre && (
-              <button type="button" onClick={() => setActiveGenre("")}>
-                Xóa lọc
-              </button>
-            )}
-          </div>
-          {genres.length ? (
-            <div className="genre-grid">
-              {genres.map((genre) => (
-                <button
-                  className={activeGenre === genre ? "genre-tile active" : "genre-tile"}
-                  key={genre}
-                  onClick={() => setActiveGenre(activeGenre === genre ? "" : genre)}
-                  type="button"
-                >
-                  <span>{genre}</span>
-                  <small>{novels.filter((novel) => novel.genres.includes(genre)).length} truyện</small>
+        <div className="reader-shell home-content-shell">
+          <section className="genre-section">
+            <div className="section-head">
+              <div>
+                <Sparkles size={19} />
+                <h2>Bạn đang muốn đọc gì?</h2>
+              </div>
+              {activeGenre && (
+                <button type="button" onClick={() => setActiveGenre("")}>
+                  Xóa lọc
                 </button>
-              ))}
+              )}
             </div>
-          ) : (
-            <EmptyState>Chưa có thể loại trong database.</EmptyState>
-          )}
-        </section>
+            {genres.length ? (
+              <div className="genre-grid">
+                {genres.map((genre) => (
+                  <button
+                    className={activeGenre === genre ? "genre-tile active" : "genre-tile"}
+                    key={genre}
+                    onClick={() => setActiveGenre(activeGenre === genre ? "" : genre)}
+                    type="button"
+                  >
+                    <span>{genre}</span>
+                    <small>{novels.filter((novel) => novel.genres.includes(genre)).length} truyện</small>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <EmptyState>Chưa có thể loại trong database.</EmptyState>
+            )}
+          </section>
 
-        <section className="content-grid">
-          <div className="main-content">
-            <section>
-              <SectionHeader icon={Clock3} title="Truyện mới cập nhật" />
-              {displayNovels.length ? (
-                <div className="novel-grid">
-                  {displayNovels.slice(0, 8).map((novel) => (
-                    <NovelCard key={novel.id} novel={novel} onOpen={onGoDetail} />
-                  ))}
-                </div>
-              ) : (
-                <EmptyState>Không có truyện phù hợp để hiển thị.</EmptyState>
-              )}
-            </section>
-
-            <section>
-              <SectionHeader icon={Flame} title="Truyện hot" />
-              {hotNovels.length ? (
-                <div className="novel-grid compact-grid">
-                  {hotNovels.slice(0, 6).map((novel) => (
-                    <NovelCard compact key={`hot-${novel.id}`} novel={novel} onOpen={onGoDetail} />
-                  ))}
-                </div>
-              ) : (
-                <EmptyState>Chưa có dữ liệu truyện hot.</EmptyState>
-              )}
-            </section>
-
-            <section className="split-sections">
-              <div>
-                <SectionHeader icon={BookOpen} title="Truyện full" />
-                {fullNovels.length ? (
-                  <div className="story-list">
-                    {fullNovels.slice(0, 4).map((novel) => (
-                      <NovelCard compact key={`full-${novel.id}`} novel={novel} onOpen={onGoDetail} />
+          <section className="content-grid">
+            <div className="main-content">
+              <section>
+                <SectionHeader icon={Clock3} title="Truyện mới cập nhật" />
+                {displayNovels.length ? (
+                  <div className="novel-grid">
+                    {displayNovels.slice(0, 8).map((novel) => (
+                      <NovelCard key={novel.id} novel={novel} onOpen={onGoDetail} />
                     ))}
                   </div>
                 ) : (
-                  <EmptyState>Chưa có truyện đã hoàn thành.</EmptyState>
+                  <EmptyState>Không có truyện phù hợp để hiển thị.</EmptyState>
                 )}
-              </div>
-              <div>
-                <SectionHeader icon={Star} title="Truyện đề cử" />
-                {recommendedNovels.length ? (
-                  <div className="story-list">
-                    {recommendedNovels.slice(0, 4).map((novel) => (
-                      <NovelCard compact key={`recommended-${novel.id}`} novel={novel} onOpen={onGoDetail} />
+              </section>
+
+              <section>
+                <SectionHeader icon={Flame} title="Truyện hot" />
+                {hotNovels.length ? (
+                  <div className="novel-grid compact-grid">
+                    {hotNovels.slice(0, 6).map((novel) => (
+                      <NovelCard compact key={`hot-${novel.id}`} novel={novel} onOpen={onGoDetail} />
                     ))}
                   </div>
                 ) : (
-                  <EmptyState>Chưa có dữ liệu đề cử.</EmptyState>
+                  <EmptyState>Chưa có dữ liệu truyện hot.</EmptyState>
                 )}
-              </div>
-            </section>
-          </div>
+              </section>
 
-          <aside className="rankings">
-            <RankingList
-              icon={TrendingUp}
-              title="Top truyện hot"
-              novels={hotNovels}
-              metric={(novel) => `${formatNumber(novel.views)} lượt xem`}
-            />
-            <RankingList
-              icon={Heart}
-              title="Top truyện theo dõi"
-              novels={recommendedNovels}
-              metric={(novel) => `${formatNumber(novel.followers)} theo dõi`}
-            />
-            <RankingList
-              icon={MessageCircle}
-              title="Top bình luận"
-              novels={[...novels].sort((a, b) => b.comments - a.comments)}
-              metric={(novel) => `${formatNumber(novel.comments)} bình luận`}
-            />
-          </aside>
-        </section>
+              <section className="split-sections">
+                <div>
+                  <SectionHeader icon={BookOpen} title="Truyện full" />
+                  {fullNovels.length ? (
+                    <div className="story-list">
+                      {fullNovels.slice(0, 4).map((novel) => (
+                        <NovelCard compact key={`full-${novel.id}`} novel={novel} onOpen={onGoDetail} />
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState>Chưa có truyện đã hoàn thành.</EmptyState>
+                  )}
+                </div>
+                <div>
+                  <SectionHeader icon={Star} title="Truyện đề cử" />
+                  {recommendedNovels.length ? (
+                    <div className="story-list">
+                      {recommendedNovels.slice(0, 4).map((novel) => (
+                        <NovelCard compact key={`recommended-${novel.id}`} novel={novel} onOpen={onGoDetail} />
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState>Chưa có dữ liệu đề cử.</EmptyState>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <aside className="rankings">
+              <RankingList
+                icon={TrendingUp}
+                title="Top truyện hot"
+                novels={hotNovels}
+                metric={(novel) => `${formatNumber(novel.views)} lượt xem`}
+              />
+              <RankingList
+                icon={Heart}
+                title="Top truyện theo dõi"
+                novels={recommendedNovels}
+                metric={(novel) => `${formatNumber(novel.followers)} theo dõi`}
+              />
+              <RankingList
+                icon={MessageCircle}
+                title="Top bình luận"
+                novels={[...novels].sort((a, b) => b.comments - a.comments)}
+                metric={(novel) => `${formatNumber(novel.comments)} bình luận`}
+              />
+            </aside>
+          </section>
+        </div>
       </main>
     </MainLayout>
   );

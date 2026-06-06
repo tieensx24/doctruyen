@@ -41,6 +41,17 @@ services:
     networks:
       - doctruyen_net
 
+  frontend:
+    build: ./frontend
+    container_name: doctruyen_frontend
+    restart: always
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    networks:
+      - doctruyen_net
+
 volumes:
   mysql_data:
 

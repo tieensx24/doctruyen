@@ -183,11 +183,11 @@ export default function Following({
 
                 return (
                   <article className="following-item" key={`${item.user_id}-${item.manga_id}`}>
-                    <button className="following-cover" onClick={() => onGoDetail?.(manga.id)} type="button">
+                    <button className="following-cover" onClick={() => onGoDetail?.(manga)} type="button">
                       <img src={manga.cover_image || "/logo-gao.png"} alt={manga.title || "Truyện"} />
                     </button>
                     <div className="following-info">
-                      <button onClick={() => onGoDetail?.(manga.id)} type="button">
+                      <button onClick={() => onGoDetail?.(manga)} type="button">
                         {manga.title || "Truyện đang theo dõi"}
                       </button>
                       <p>{manga.author || "Đang cập nhật"}</p>

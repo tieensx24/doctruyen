@@ -1,6 +1,7 @@
 const multer = require('multer');
 
 const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const allowedTextTypes = ['text/plain', 'application/octet-stream'];
 
 const storage = multer.memoryStorage();
 
@@ -18,6 +19,24 @@ const uploadImage = multer({
   limits: {
     fileSize: 5 * 1024 * 1024,
     files: 30,
+  },
+});
+
+const textFileFilter = (req, file, cb) => {
+  const isTxtName = /\.txt$/i.test(file.originalname || '');
+  if (!isTxtName || !allowedTextTypes.includes(file.mimetype)) {
+    return cb(new Error('Chỉ cho phép upload file .txt'));
+  }
+
+  cb(null, true);
+};
+
+const uploadTextFile = multer({
+  storage,
+  fileFilter: textFileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 1,
   },
 });
 
@@ -41,5 +60,6 @@ const handleUploadError = (err, req, res, next) => {
 
 module.exports = {
   uploadImage,
+  uploadTextFile,
   handleUploadError,
 };

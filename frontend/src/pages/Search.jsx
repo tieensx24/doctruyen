@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Eye, Heart, MessageCircle, Search as SearchIcon } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import MainLayout from "../components/MainLayout.jsx";
@@ -25,18 +25,21 @@ function enrichManga(manga, index) {
     ...manga,
     id: manga.id || index + 1,
     title: manga.title || "Truyện chưa đặt tên",
+    alternativeNames: manga.alternative_names || "",
     author: manga.author || "Đang cập nhật",
     categories,
     cover: manga.cover_image || manga.coverImage || PLACEHOLDER_COVER,
     views,
     comments: Number(manga.comments || manga.comments_count || 0),
     followers: Number(manga.followers || manga.followers_count || 0),
+    relevance: Number(manga.relevance || 0),
+    matchedFields: manga.matched_fields || [],
   };
 }
 
 function SearchCard({ manga, onOpen }) {
   return (
-    <article className="category-card" onClick={() => onOpen?.(manga.id)} role="button" tabIndex={0}>
+    <article className="category-card search-result-card" onClick={() => onOpen?.(manga)} role="button" tabIndex={0}>
       <div className="category-cover">
         <img src={manga.cover} alt={manga.title} />
         <div className="category-cover-meta">
@@ -56,6 +59,12 @@ function SearchCard({ manga, onOpen }) {
       </div>
       <h3>{manga.title}</h3>
       <p>{manga.author}</p>
+      {manga.alternativeNames && <small className="search-alt-name">{manga.alternativeNames}</small>}
+      {manga.categories.length > 0 && (
+        <div className="search-match-tags">
+          {manga.categories.slice(0, 3).map(category => <span key={category}>{category}</span>)}
+        </div>
+      )}
     </article>
   );
 }
@@ -76,7 +85,7 @@ export default function Search({
   const [searchParams] = useSearchParams();
   const query = searchParams.get("q") || "";
   const [search, setSearch] = useState(query);
-  const [mangas, setMangas] = useState([]);
+  const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -85,40 +94,40 @@ export default function Search({
   }, [query]);
 
   useEffect(() => {
-    async function loadMangas() {
-      setLoading(true);
+    let active = true;
+
+    async function loadResults() {
+      const keyword = query.trim();
       setError("");
 
-      try {
-        const response = await api.get("/mangas");
-        if (!isOk(response)) throw new Error("Không tải được danh sách truyện.");
-        setMangas(Array.isArray(response.data) ? response.data : []);
-      } catch (err) {
-        setMangas([]);
-        setError(err.message || "Không tải được danh sách truyện.");
-      } finally {
+      if (!keyword) {
+        setResults([]);
         setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const response = await api.get("/search", {
+          params: { q: keyword, limit: 40 },
+        });
+        if (!isOk(response)) throw new Error(response.data?.message || "Không tìm kiếm được truyện.");
+        if (active) setResults(Array.isArray(response.data) ? response.data.map(enrichManga) : []);
+      } catch (err) {
+        if (active) {
+          setResults([]);
+          setError(err.message || "Không tìm kiếm được truyện.");
+        }
+      } finally {
+        if (active) setLoading(false);
       }
     }
 
-    loadMangas();
-  }, []);
-
-  const novels = useMemo(() => mangas.map(enrichManga), [mangas]);
-  const results = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    if (!keyword) return novels;
-
-    return novels.filter((manga) => {
-      const searchableText = [
-        manga.title,
-        manga.author,
-        ...manga.categories,
-      ].join(" ").toLowerCase();
-
-      return searchableText.includes(keyword);
-    });
-  }, [novels, query]);
+    loadResults();
+    return () => {
+      active = false;
+    };
+  }, [query]);
 
   return (
     <MainLayout className="category-page search-page">
@@ -155,15 +164,15 @@ export default function Search({
           <div className="search-summary">
             {query ? (
               <p>
-                Từ khóa <strong>{query}</strong> tìm thấy <strong>{results.length}</strong> truyện.
+                Từ khóa <strong>{query}</strong> tìm thấy <strong>{results.length}</strong> truyện, sắp xếp theo độ liên quan.
               </p>
             ) : (
-              <p>Nhập tên truyện, tác giả hoặc thể loại trên thanh tìm kiếm để bắt đầu.</p>
+              <p>Nhập tên truyện, tên khác, tác giả hoặc thể loại trên thanh tìm kiếm để bắt đầu.</p>
             )}
           </div>
 
           {loading ? (
-            <div className="empty-state">Đang tải danh sách truyện...</div>
+            <div className="empty-state">Đang tìm kiếm truyện...</div>
           ) : error ? (
             <div className="empty-state">{error}</div>
           ) : results.length ? (
@@ -172,8 +181,10 @@ export default function Search({
                 <SearchCard key={manga.id} manga={manga} onOpen={onGoDetail} />
               ))}
             </div>
-          ) : (
+          ) : query ? (
             <div className="empty-state">Không tìm thấy truyện phù hợp trong database.</div>
+          ) : (
+            <div className="empty-state">Hãy nhập từ khóa để tìm truyện.</div>
           )}
         </section>
       </main>

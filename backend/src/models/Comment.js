@@ -5,7 +5,11 @@ const Comment = sequelize.define('Comment', {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
   user_id: { type: DataTypes.INTEGER, allowNull: false },
   manga_id: { type: DataTypes.INTEGER, allowNull: false },
-  content: { type: DataTypes.TEXT, allowNull: false },
-}, { timestamps: true, tableName: 'comments', createdAt: 'created_at', updatedAt: false });
+  chapter_id: { type: DataTypes.INTEGER, allowNull: true },
+  parent_id: { type: DataTypes.INTEGER, allowNull: true },
+  sticker_id: { type: DataTypes.INTEGER, allowNull: true },
+  content: { type: DataTypes.TEXT, allowNull: true },
+  status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'visible' },
+}, { timestamps: true, tableName: 'comments', createdAt: 'created_at', updatedAt: 'updated_at' });
 
 module.exports = Comment;

@@ -31,6 +31,34 @@ function chapterLabel(chapter) {
   return chapter.title || `Chapter ${chapter.chapter_number}`;
 }
 
+function formatRelativeTime(value) {
+  if (!value) return "vừa xong";
+
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return "vừa xong";
+
+  const secondsAgo = Math.floor((Date.now() - time) / 1000);
+  if (secondsAgo < 60) return "vừa xong";
+
+  const units = [
+    ["year", 365 * 24 * 60 * 60],
+    ["month", 30 * 24 * 60 * 60],
+    ["week", 7 * 24 * 60 * 60],
+    ["day", 24 * 60 * 60],
+    ["hour", 60 * 60],
+    ["minute", 60],
+  ];
+
+  const formatter = new Intl.RelativeTimeFormat("vi-VN", { numeric: "always" });
+  const [unit, unitSeconds] = units.find(([, size]) => secondsAgo >= size) || ["minute", 60];
+  return formatter.format(-Math.floor(secondsAgo / unitSeconds), unit);
+}
+
+function progressLabel(item) {
+  const percent = Math.round(Number(item?.progress_percent || 0));
+  return percent > 0 ? `${percent}%` : "Moi mo";
+}
+
 export default function ReadingHistory({
   user,
   onGoHome,
@@ -179,11 +207,11 @@ export default function ReadingHistory({
 
                 return (
                   <article className="following-item" key={`${item.user_id}-${item.manga_id}`}>
-                    <button className="following-cover" onClick={() => onGoDetail?.(manga.id)} type="button">
+                    <button className="following-cover" onClick={() => onGoDetail?.(manga)} type="button">
                       <img src={manga.cover_image || "/logo-gao.png"} alt={manga.title || "Truyện"} />
                     </button>
                     <div className="following-info">
-                      <button onClick={() => onGoDetail?.(manga.id)} type="button">
+                      <button onClick={() => onGoDetail?.(manga)} type="button">
                         {manga.title || "Truyện đã đọc"}
                       </button>
                       <p>{manga.author || "Đang cập nhật"}</p>
@@ -198,13 +226,17 @@ export default function ReadingHistory({
                         </span>
                         <span>
                           <Clock3 size={15} />
-                          {formatDate(item.updated_at)}
+                          {formatRelativeTime(item.last_read_at || item.updated_at)}
                         </span>
+                        <span>{progressLabel(item)}</span>
+                      </div>
+                      <div className="history-progress-bar" aria-label={`Tien do ${progressLabel(item)}`}>
+                        <span style={{ width: `${Math.min(Math.max(Number(item.progress_percent || 0), 0), 100)}%` }} />
                       </div>
                     </div>
                     <div className="following-actions">
                       {chapter.id && (
-                        <button onClick={() => onGoChapter?.(chapter.id)} type="button">
+                        <button onClick={() => onGoChapter?.(chapter, manga)} type="button">
                           Đọc tiếp
                         </button>
                       )}
